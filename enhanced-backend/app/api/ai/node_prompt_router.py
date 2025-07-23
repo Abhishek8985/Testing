@@ -60,7 +60,9 @@ class NodePromptRouter:
         'anomaly_detection': AnomalyDetectionPrompt,
         'outlier_detection': AnomalyDetectionPrompt,
         'univariate_anomaly': AnomalyDetectionPrompt,
+        'univariate_anomaly_detection': AnomalyDetectionPrompt,  # Add this missing mapping!
         'multivariate_anomaly': AnomalyDetectionPrompt,
+        'multivariate_anomaly_detection': AnomalyDetectionPrompt,  # Add this too!
         'event_detection': AnomalyDetectionPrompt,
     }
     
@@ -88,6 +90,10 @@ class NodePromptRouter:
             try:
                 return prompt_generator.generate_prompt(data, node_id, context)
             except Exception as e:
+                # Log the specific error for debugging
+                print(f"🚨 ERROR in {prompt_generator.__name__}.generate_prompt(): {str(e)}")
+                import traceback
+                traceback.print_exc()
                 return cls._generate_fallback_prompt(node_type, data, node_id, str(e))
         else:
             return cls._generate_generic_prompt(node_type, data, node_id, context)

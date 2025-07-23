@@ -1,0 +1,248 @@
+🚀 **COMPREHENSIVE WORKFLOW INTELLIGENCE ANALYSIS**
+**Analyzing 3 Connected Nodes | Complexity: BASIC**
+
+📊 **WORKFLOW ARCHITECTURE OVERVIEW**:
+• Data Sources: 1 nodes
+• Statistical Analysis: 0 nodes  
+• Machine Learning: 0 nodes
+• Visualizations: 0 nodes
+• Data Processing: 0 nodes
+• EDA Analysis: 0 nodes
+• Data Cleaning: 1 nodes
+• Feature Engineering: 0 nodes
+• Anomaly Detection: 1 nodes
+
+🔗 **CONNECTED NODE ANALYSIS**:
+The following connected nodes require comprehensive, integrated analysis:
+
+
+═══════════════════════════════════════════════════════════════════
+
+**NODE 1: NODE_175186389526373_24J29ELAR | TYPE: DATA_SOURCE**
+
+
+⚠️ **PROCESSING NODE - node_175186389526373_24j29elar | TYPE: DATA_SOURCE**
+
+🔧 **NODE STATUS**: Processing completed with specialized data_source operation
+
+📊 **AVAILABLE DATA**: 3 components available
+
+💡 **ANALYSIS REQUIREMENTS**:
+Please provide comprehensive analysis of this data_source node including:
+
+1. **Processing Assessment**: Evaluate the technical effectiveness of the data_source operation
+2. **Data Quality Impact**: Assess improvements or changes to data structure and properties
+3. **Statistical Value**: Determine analytical significance of the processing results
+4. **Integration Potential**: Evaluate connection with other analytical components
+5. **Technical Insights**: Extract specific statistical findings
+6. **Optimization Opportunities**: Identify potential algorithm improvements
+7. **Analytical Applications**: Recommend statistical use cases
+
+🎯 **Response Requirements**: Provide specific, technical insights based on the data_source processing results and their statistical implications.
+
+Note: Advanced prompt generation temporarily unavailable - using standard analysis framework.
+
+
+═══════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════
+
+**NODE 2: NODE_175274955796885_D56MSMLJE | TYPE: DATA_CLEANING**
+
+
+⚠️ **PROCESSING NODE - node_175274955796885_d56msmlje | TYPE: DATA_CLEANING**
+
+🔧 **NODE STATUS**: Processing completed with specialized data_cleaning operation
+
+📊 **AVAILABLE DATA**: 3 components available
+
+💡 **ANALYSIS REQUIREMENTS**:
+Please provide comprehensive analysis of this data_cleaning node including:
+
+1. **Processing Assessment**: Evaluate the technical effectiveness of the data_cleaning operation
+2. **Data Quality Impact**: Assess improvements or changes to data structure and properties
+3. **Statistical Value**: Determine analytical significance of the processing results
+4. **Integration Potential**: Evaluate connection with other analytical components
+5. **Technical Insights**: Extract specific statistical findings
+6. **Optimization Opportunities**: Identify potential algorithm improvements
+7. **Analytical Applications**: Recommend statistical use cases
+
+🎯 **Response Requirements**: Provide specific, technical insights based on the data_cleaning processing results and their statistical implications.
+
+Note: Advanced prompt generation temporarily unavailable - using standard analysis framework.
+
+
+═══════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════
+
+**NODE 3: NODE_175286955796885_ANOMALY | TYPE: UNIVARIATE_ANOMALY_DETECTION**
+
+🚨 **ANOMALY DETECTION INTELLIGENCE CENTER - Node: node_175286955796885_anomaly**
+
+⚠️ **ANOMALY DETECTION OVERVIEW**:
+Detection Method: Iqr (Interquartile Range)
+Anomalies Detected: 144 out of 1000 records
+Overall Anomaly Rate: 14.400%
+Columns Analyzed: 3
+Detection Confidence: Standard
+
+🔍 **DETAILED ANOMALY BREAKDOWN BY COLUMN**:
+
+• **CO(GT)**:
+  - Anomalies Detected: 45
+  - Anomaly Rate: 0.048%
+  - Threshold Range: -2.5 to 8.9
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [123, 456, 789, 1234, 5678]
+
+• **C6H6(GT)**:
+  - Anomalies Detected: 32
+  - Anomaly Rate: 0.034%
+  - Threshold Range: -1.2 to 15.6
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [234, 567, 890, 2345]
+
+• **NOx(GT)**:
+  - Anomalies Detected: 67
+  - Anomaly Rate: 0.072%
+  - Threshold Range: -50.2 to 425.8
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [345, 678, 901, 3456, 6789]
+
+
+🔍 **ANOMALY PATTERN ANALYSIS**:
+📊 **MULTI-COLUMN ANOMALY DETECTION**: 3 columns analyzed
+• **NOx(GT)**: 67 anomalies (0.072%) - ⚠️ MODERATE priority [IQR]
+• **CO(GT)**: 45 anomalies (0.048%) - 📊 LOW priority [IQR]
+• **C6H6(GT)**: 32 anomalies (0.034%) - 📊 LOW priority [IQR]
+
+🎯 **DETECTION METHOD ASSESSMENT**:
+🔧 **IQR (INTERQUARTILE RANGE)**: Advanced anomaly detection method applied
+
+📊 **DATA IMPACT ANALYSIS**:
+⚠️ **MODERATE DATA IMPACT**: Notable statistical deviations present
+📊 **TECHNICAL REVIEW**: Detailed statistical examination recommended
+
+⚡ **RISK LEVEL ASSESSMENT**:
+🎯 **CO(GT) THRESHOLD**: {'lower': -2.5, 'upper': 8.9, 'count': 45, 'method': 'IQR', 'percentage': 0.048} - configured for risk detection
+🎯 **C6H6(GT) THRESHOLD**: {'lower': -1.2, 'upper': 15.6, 'count': 32, 'method': 'IQR', 'percentage': 0.034} - configured for risk detection
+🎯 **NOX(GT) THRESHOLD**: {'lower': -50.2, 'upper': 425.8, 'count': 67, 'method': 'IQR', 'percentage': 0.072} - configured for risk detection
+📊 **CLUSTER RISK**: Several anomalies indicate localized problems
+📋 **BUSINESS CONTINUITY**: Assess impact on ongoing operations and customer service
+🔄 **RECOVERY PLANNING**: Develop contingency plans for anomaly response
+
+🎯 **ACTION RECOMMENDATIONS**:
+⚡ **IMMEDIATE ACTIONS**:
+   ⚠️ Perform detailed statistical analysis
+   📊 Conduct root cause analysis using statistical methods
+   🔍 Investigate correlated variables and patterns
+🔍 **INVESTIGATION ACTIONS**:
+   📊 Analyze anomaly distributions and statistical properties
+   🕒 Review temporal trends and autocorrelation patterns
+   🔗 Check variable relationships and covariance structures
+   � Apply multivariate analysis techniques
+🛡️ **PREVENTION ACTIONS**:
+   🔧 Optimize statistical detection thresholds
+   📈 Enhance monitoring with additional statistical metrics
+   📋 Update data validation procedures
+   📊 Implement improved outlier detection algorithms
+📢 **TECHNICAL DOCUMENTATION**:
+   📋 Create statistical summary of anomaly findings
+   � Generate visualization of anomaly distributions
+   � Document methodological approach to anomaly detection
+   📝 Record technical limitations and statistical assumptions
+🔄 **FOLLOW-UP ACTIONS**:
+   📅 Implement periodic statistical quality checks
+   📊 Monitor statistical properties of variables over time
+   🎯 Measure effectiveness of anomaly detection methods
+   📈 Update detection models with new data distributions
+
+📊 **DETECTION METADATA**:
+• Total Anomalies Found: 144
+• Data Points Analyzed: 1000
+• Scoring Available: No
+• Threshold Configuration: Custom
+• Statistical Validation: Basic
+• Multi-column Analysis: Yes
+
+💡 **ADVANCED ANOMALY INTELLIGENCE REQUIREMENTS**:
+
+1. **PATTERN CLASSIFICATION**: Categorize anomalies by type, severity, and statistical significance
+2. **ROOT CAUSE ANALYSIS**: Identify potential causes and contributing factors for detected anomalies
+3. **STATISTICAL PRIORITY**: Rank anomalies by statistical significance and deviation magnitude
+4. **DETECTION RESPONSE**: Define technical actions for anomaly investigation
+5. **PREVENTION STRATEGY**: Recommend statistical methods to reduce false positives
+6. **MONITORING ENHANCEMENT**: Improve detection algorithms based on identified patterns
+7. **TECHNICAL ASSESSMENT**: Prepare detailed anomaly statistics and mathematical properties
+8. **EFFICIENCY ANALYSIS**: Evaluate the statistical power and accuracy of detection methods
+
+🎯 **CRITICAL ANOMALY ANALYSIS REQUIREMENTS**:
+- Classify SPECIFIC anomaly patterns and their statistical significance
+- Assess MATHEMATICAL PROPERTIES of detected deviations
+- Identify SYSTEMIC PATTERNS vs isolated incidents
+- Quantify STATISTICAL SIGNIFICANCE of detected anomalies
+- Recommend SPECIFIC TECHNIQUES for each category of anomaly
+- Establish MONITORING THRESHOLDS for future detection
+- Evaluate DETECTION EFFECTIVENESS and false positive rates
+
+⚡ **RESPONSE FOCUS**: Analyze the ACTUAL anomalies detected, their patterns, and statistical properties. Provide concrete, actionable recommendations for anomaly response and prevention based on the specific detection results.
+
+**CRITICAL**: Base analysis on the actual anomaly detection results provided, including specific threshold values, detection counts, and column-wise breakdowns.
+
+═══════════════════════════════════════════════════════════════════
+
+
+🎯 **DATA ANALYSIS SYNTHESIS REQUIREMENTS**:
+
+**REQUIREMENT**: This analysis must synthesize data from ALL 3 connected nodes to provide:
+
+1. **DATA INFORMATION SYNTHESIS**: 
+   - Combine data information from all nodes
+   - Identify cross-node patterns and relationships
+   - Summarize key data characteristics
+
+2. **DATA QUALITY ASSESSMENT**:
+   - Evaluate data quality progression through the workflow
+   - Assess transformation effectiveness across connected nodes
+   - Identify data issues and inconsistencies
+
+3. **RESULTS REPORTING**:
+   - Synthesize statistical findings with analysis results
+   - Combine visualization insights with analytical outcomes
+   - Summarize key findings from the data
+
+**RESPONSE STRUCTURE REQUIREMENTS**:
+
+Provide a comprehensive analysis structured as follows:
+
+## DATA SUMMARY
+- Key characteristics of the data processed in this workflow
+- Data quality assessment
+- Main statistical properties
+
+## INTEGRATED DATA ANALYSIS
+- Cross-node pattern analysis
+- Data transformation results
+- Quality progression assessment
+
+## ANALYSIS RESULTS
+- Key findings from the data
+- Observed patterns and trends
+- Notable statistics and metrics
+
+⚡ **CRITICAL REQUIREMENT**: All insights must be based on the ACTUAL data, patterns, and results from the connected nodes. Focus only on data information and results reporting.
+
+**RESPONSE COMPLETENESS REQUIREMENTS**:
+- Each section MUST contain at least 3-4 meaningful sentences
+- Provide specific data insights, not generic statements
+- Include quantitative findings where available
+- Ensure comprehensive coverage of all workflow aspects
+- Use bullet points and clear formatting for readability
+
+**WORKFLOW CONTEXT**: {
+  "total_nodes": 3,
+  "analysis_type": "air_quality_anomaly_detection",
+  "data_source": "AirQualityUCI_1.csv",
+  "workflow_purpose": "Identify anomalies in air quality sensor data"
+}

@@ -12,27 +12,97 @@ class AnomalyDetectionPrompt:
     def generate_prompt(data: dict, node_id: str, context: dict = None) -> str:
         """Generate advanced anomaly detection analysis prompt"""
         
+        # Handle both old and new data formats
         anomalies = data.get('anomalies', [])
-        detection_method = data.get('method', 'statistical')
+        anomaly_results = data.get('anomaly_results', {})
+        detection_method = data.get('method', data.get('detection_method', 'statistical'))
         anomaly_scores = data.get('anomaly_scores', [])
         df = data.get('dataframe')
         detection_stats = data.get('detection_stats', {})
         thresholds = data.get('thresholds', {})
         
-        if not anomalies and df is None:
+        # New format: extract detailed anomaly information from anomaly_results
+        if anomaly_results and isinstance(anomaly_results, dict):
+            # Extract comprehensive anomaly data
+            all_anomalies = []
+            all_thresholds = {}
+            total_anomalies = data.get('total_anomalies', 0)
+            
+            for column, column_data in anomaly_results.items():
+                if isinstance(column_data, dict):
+                    anomaly_count = column_data.get('anomalies_detected', 0)
+                    anomaly_indices = column_data.get('anomaly_indices', [])
+                    threshold_lower = column_data.get('threshold_lower')
+                    threshold_upper = column_data.get('threshold_upper')
+                    method = column_data.get('method', detection_method)
+                    
+                    # Store anomaly information
+                    all_anomalies.extend(anomaly_indices)
+                    all_thresholds[column] = {
+                        'lower': threshold_lower,
+                        'upper': threshold_upper,
+                        'count': anomaly_count,
+                        'method': method,
+                        'percentage': column_data.get('anomaly_percentage', 0)
+                    }
+            
+            # Use the extracted data
+            anomalies = all_anomalies if all_anomalies else anomalies
+            thresholds = all_thresholds if all_thresholds else thresholds
+            
+        # Enhanced validation - check for meaningful data
+        if not anomalies and not anomaly_results and df is None:
             return "❌ **CRITICAL ERROR**: No anomaly detection results or dataframe available"
         
-        # Analyze anomaly detection results
-        anomaly_analysis = AnomalyDetectionPrompt._analyze_anomalies(anomalies, anomaly_scores, df)
+        # Analyze anomaly detection results with enhanced data
+        anomaly_analysis = AnomalyDetectionPrompt._analyze_anomalies(anomalies, anomaly_scores, df, anomaly_results)
         method_assessment = AnomalyDetectionPrompt._assess_detection_method(detection_method, detection_stats)
-        data_impact = AnomalyDetectionPrompt._assess_data_impact(anomalies, df, detection_method)
+        data_impact = AnomalyDetectionPrompt._assess_data_impact(anomalies, df, detection_method, anomaly_results)
         risk_assessment = AnomalyDetectionPrompt._assess_risk_levels(anomalies, anomaly_scores, thresholds)
-        action_recommendations = AnomalyDetectionPrompt._generate_action_recommendations(anomalies, detection_method)
+        action_recommendations = AnomalyDetectionPrompt._generate_action_recommendations(anomalies, detection_method, anomaly_results)
         
-        # Anomaly summary
-        anomaly_count = len(anomalies) if isinstance(anomalies, list) else "Multiple" if anomalies else 0
-        total_records = df.shape[0] if df is not None else "Unknown"
-        anomaly_rate = (len(anomalies) / df.shape[0] * 100) if df is not None and isinstance(anomalies, list) else 0
+        # Enhanced anomaly summary with detailed results
+        if anomaly_results:
+            anomaly_count = data.get('total_anomalies', len(anomalies)) if isinstance(anomalies, list) else sum(
+                col_data.get('anomalies_detected', 0) for col_data in anomaly_results.values() 
+                if isinstance(col_data, dict)
+            )
+            analyzed_columns = len(anomaly_results) if isinstance(anomaly_results, dict) else 1
+            detection_method = data.get('detection_method', detection_method)
+        else:
+            anomaly_count = len(anomalies) if isinstance(anomalies, list) else "Multiple" if anomalies else 0
+            analyzed_columns = 1
+        
+        # Handle dataframe - could be a pandas DataFrame or dict summary
+        if df is not None and hasattr(df, 'shape'):
+            total_records = df.shape[0]
+        elif isinstance(df, dict) and 'shape' in df:
+            total_records = df['shape'][0] if isinstance(df['shape'], (list, tuple)) else df.get('total_records', "Unknown")
+        else:
+            total_records = data.get('total_data_points', data.get('summary_statistics', {}).get('total_data_points', "Unknown"))
+        
+        # Calculate anomaly rate safely
+        if data.get('overall_anomaly_rate') is not None:
+            anomaly_rate = data.get('overall_anomaly_rate')
+        elif isinstance(total_records, int) and isinstance(anomaly_count, int) and total_records > 0:
+            anomaly_rate = (anomaly_count / total_records) * 100
+        else:
+            anomaly_rate = 0
+        
+        # Build comprehensive anomaly details section
+        anomaly_details_section = ""
+        if anomaly_results and isinstance(anomaly_results, dict):
+            anomaly_details_section = "\n🔍 **DETAILED ANOMALY BREAKDOWN BY COLUMN**:\n"
+            for column, col_data in anomaly_results.items():
+                if isinstance(col_data, dict):
+                    anomaly_details_section += f"""
+• **{column}**:
+  - Anomalies Detected: {col_data.get('anomalies_detected', 0)}
+  - Anomaly Rate: {col_data.get('anomaly_percentage', 0):.3f}%
+  - Threshold Range: {col_data.get('threshold_lower', 'N/A')} to {col_data.get('threshold_upper', 'N/A')}
+  - Detection Method: {col_data.get('method', 'Standard')}
+  - Sample Anomaly Indices: {str(col_data.get('anomaly_indices', [])[:5])}
+"""
         
         prompt = f"""
 🚨 **ANOMALY DETECTION INTELLIGENCE CENTER - Node: {node_id}**
@@ -40,8 +110,10 @@ class AnomalyDetectionPrompt:
 ⚠️ **ANOMALY DETECTION OVERVIEW**:
 Detection Method: {detection_method.replace('_', ' ').title()}
 Anomalies Detected: {anomaly_count} out of {total_records} records
-Anomaly Rate: {anomaly_rate:.2f}%
+Overall Anomaly Rate: {anomaly_rate:.3f}%
+Columns Analyzed: {analyzed_columns}
 Detection Confidence: {"High" if anomaly_scores else "Standard"}
+{anomaly_details_section}
 
 🔍 **ANOMALY PATTERN ANALYSIS**:
 {chr(10).join(anomaly_analysis) if anomaly_analysis else "⚠️ Anomaly pattern analysis not available"}
@@ -49,7 +121,7 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
 🎯 **DETECTION METHOD ASSESSMENT**:
 {chr(10).join(method_assessment) if method_assessment else "⚠️ Method assessment not available"}
 
-� **DATA IMPACT ANALYSIS**:
+📊 **DATA IMPACT ANALYSIS**:
 {chr(10).join(data_impact) if data_impact else "⚠️ Data impact assessment not available"}
 
 ⚡ **RISK LEVEL ASSESSMENT**:
@@ -59,10 +131,12 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
 {chr(10).join(action_recommendations) if action_recommendations else "⚠️ Action recommendations not available"}
 
 📊 **DETECTION METADATA**:
+• Total Anomalies Found: {anomaly_count}
+• Data Points Analyzed: {total_records}
 • Scoring Available: {"Yes" if anomaly_scores else "No"}
 • Threshold Configuration: {"Custom" if thresholds else "Default"}
 • Statistical Validation: {"Available" if detection_stats else "Basic"}
-• Multi-dimensional Analysis: {"Yes" if isinstance(anomalies, list) and len(anomalies) > 0 else "Single"}
+• Multi-column Analysis: {"Yes" if analyzed_columns > 1 else "Single Column"}
 
 💡 **ADVANCED ANOMALY INTELLIGENCE REQUIREMENTS**:
 
@@ -85,15 +159,51 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
 - Evaluate DETECTION EFFECTIVENESS and false positive rates
 
 ⚡ **RESPONSE FOCUS**: Analyze the ACTUAL anomalies detected, their patterns, and statistical properties. Provide concrete, actionable recommendations for anomaly response and prevention based on the specific detection results.
+
+**CRITICAL**: Base analysis on the actual anomaly detection results provided, including specific threshold values, detection counts, and column-wise breakdowns.
 """
         
         return prompt.strip()
     
     @staticmethod
-    def _analyze_anomalies(anomalies, anomaly_scores, df) -> list:
+    def _analyze_anomalies(anomalies, anomaly_scores, df, anomaly_results=None) -> list:
         """Analyze detected anomalies for patterns and insights"""
         analysis = []
         
+        # Handle enhanced anomaly results format
+        if anomaly_results and isinstance(anomaly_results, dict):
+            total_anomalies = sum(
+                col_data.get('anomalies_detected', 0) 
+                for col_data in anomaly_results.values() 
+                if isinstance(col_data, dict)
+            )
+            
+            if total_anomalies == 0:
+                analysis.append("✅ **NO ANOMALIES DETECTED**: All columns operating within normal parameters")
+                return analysis
+            
+            # Column-wise anomaly analysis
+            analysis.append(f"📊 **MULTI-COLUMN ANOMALY DETECTION**: {len(anomaly_results)} columns analyzed")
+            
+            sorted_columns = sorted(
+                anomaly_results.items(), 
+                key=lambda x: x[1].get('anomalies_detected', 0) if isinstance(x[1], dict) else 0, 
+                reverse=True
+            )
+            
+            for i, (column, col_data) in enumerate(sorted_columns[:3]):  # Top 3 columns
+                if isinstance(col_data, dict):
+                    count = col_data.get('anomalies_detected', 0)
+                    rate = col_data.get('anomaly_percentage', 0)
+                    method = col_data.get('method', 'IQR')
+                    
+                    if count > 0:
+                        severity = "🚨 HIGH" if rate > 0.1 else "⚠️ MODERATE" if rate > 0.05 else "📊 LOW"
+                        analysis.append(f"• **{column}**: {count} anomalies ({rate:.3f}%) - {severity} priority [{method}]")
+            
+            return analysis
+        
+        # Fallback to original analysis
         if not anomalies:
             analysis.append("✅ **NO ANOMALIES DETECTED**: System operating within normal parameters")
             return analysis
@@ -102,17 +212,25 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
         
         # Anomaly frequency analysis
         if df is not None:
-            total_records = df.shape[0]
-            anomaly_rate = (anomaly_count / total_records) * 100
-            
-            if anomaly_rate > 10:
-                analysis.append(f"🚨 **HIGH ANOMALY RATE**: {anomaly_rate:.1f}% - Systemic issues require investigation")
-            elif anomaly_rate > 5:
-                analysis.append(f"⚠️ **ELEVATED ANOMALY RATE**: {anomaly_rate:.1f}% - Process review recommended")
-            elif anomaly_rate > 1:
-                analysis.append(f"📊 **MODERATE ANOMALY RATE**: {anomaly_rate:.1f}% - Normal operational variance")
+            # Handle both DataFrame and dict representations
+            if hasattr(df, 'shape'):
+                total_records = df.shape[0]
+            elif isinstance(df, dict) and 'shape' in df:
+                total_records = df['shape'][0] if isinstance(df['shape'], (list, tuple)) else None
             else:
-                analysis.append(f"✅ **LOW ANOMALY RATE**: {anomaly_rate:.1f}% - Excellent system stability")
+                total_records = None
+                
+            if total_records and total_records > 0:
+                anomaly_rate = (anomaly_count / total_records) * 100
+                
+                if anomaly_rate > 10:
+                    analysis.append(f"🚨 **HIGH ANOMALY RATE**: {anomaly_rate:.1f}% - Systemic issues require investigation")
+                elif anomaly_rate > 5:
+                    analysis.append(f"⚠️ **ELEVATED ANOMALY RATE**: {anomaly_rate:.1f}% - Process review recommended")
+                elif anomaly_rate > 1:
+                    analysis.append(f"📊 **MODERATE ANOMALY RATE**: {anomaly_rate:.1f}% - Normal operational variance")
+                else:
+                    analysis.append(f"✅ **LOW ANOMALY RATE**: {anomaly_rate:.1f}% - Excellent system stability")
         
         # Severity analysis using anomaly scores
         if anomaly_scores and isinstance(anomaly_scores, list):
@@ -138,8 +256,16 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
         
         # Temporal pattern analysis (if datetime columns exist)
         if df is not None and isinstance(anomalies, list):
-            date_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
-            if date_cols and len(anomalies) > 0:
+            # Handle DataFrame vs dict for datetime column detection
+            has_datetime_cols = False
+            if hasattr(df, 'select_dtypes'):
+                date_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+                has_datetime_cols = bool(date_cols)
+            elif isinstance(df, dict) and 'dtypes' in df:
+                # Check if any columns have datetime types in the summary
+                has_datetime_cols = any('datetime' in str(dtype) for dtype in df.get('dtypes', {}).values())
+                
+            if has_datetime_cols and len(anomalies) > 0:
                 analysis.append("📅 **TEMPORAL ANALYSIS**: Time-based anomaly patterns available for trend analysis")
         
         # Clustering analysis of anomalies
@@ -257,7 +383,7 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
         return assessment
     
     @staticmethod
-    def _assess_data_impact(anomalies, df, method: str) -> list:
+    def _assess_data_impact(anomalies, df, method: str, anomaly_results=None) -> list:
         """Assess the data impact of detected anomalies"""
         impact_assessment = []
         
@@ -269,23 +395,38 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
         
         # Scale-based impact assessment
         if df is not None:
-            total_records = df.shape[0]
-            impact_scale = (anomaly_count / total_records) * 100
-            
-            if impact_scale > 5:
-                impact_assessment.append("🚨 **HIGH DATA IMPACT**: Significant statistical anomalies detected")
-                impact_assessment.append("⚡ **IMMEDIATE ANALYSIS**: Statistical investigation and validation required")
-            elif impact_scale > 1:
-                impact_assessment.append("⚠️ **MODERATE DATA IMPACT**: Notable statistical deviations present")
-                impact_assessment.append("📊 **TECHNICAL REVIEW**: Detailed statistical examination recommended")
+            # Handle both DataFrame and dict representations
+            if hasattr(df, 'shape'):
+                total_records = df.shape[0]
+            elif isinstance(df, dict) and 'shape' in df:
+                total_records = df['shape'][0] if isinstance(df['shape'], (list, tuple)) else None
             else:
-                impact_assessment.append("📉 **LOW DATA IMPACT**: Isolated anomalies with minimal statistical effect")
-                impact_assessment.append("🔍 **ROUTINE MONITORING**: Standard statistical verification applicable")
+                total_records = None
+                
+            if total_records and total_records > 0:
+                impact_scale = (anomaly_count / total_records) * 100
+                
+                if impact_scale > 5:
+                    impact_assessment.append("🚨 **HIGH DATA IMPACT**: Significant statistical anomalies detected")
+                    impact_assessment.append("⚡ **IMMEDIATE ANALYSIS**: Statistical investigation and validation required")
+                elif impact_scale > 1:
+                    impact_assessment.append("⚠️ **MODERATE DATA IMPACT**: Notable statistical deviations present")
+                    impact_assessment.append("📊 **TECHNICAL REVIEW**: Detailed statistical examination recommended")
+                else:
+                    impact_assessment.append("📉 **LOW DATA IMPACT**: Isolated anomalies with minimal statistical effect")
+                    impact_assessment.append("🔍 **ROUTINE MONITORING**: Standard statistical verification applicable")
         
         # Data domain-specific impact analysis
         if df is not None:
-            column_names = df.columns.tolist()
-            column_text = " ".join(column_names).lower()
+            # Handle both DataFrame and dict representations for column analysis
+            if hasattr(df, 'columns'):
+                column_names = df.columns.tolist()
+            elif isinstance(df, dict) and 'columns' in df:
+                column_names = df['columns'] if isinstance(df['columns'], list) else []
+            else:
+                column_names = []
+                
+            column_text = " ".join(column_names).lower() if column_names else ""
             
             # Financial/numeric data
             if any(keyword in column_text for keyword in ['revenue', 'cost', 'price', 'profit', 'sales']):
@@ -375,7 +516,7 @@ Detection Confidence: {"High" if anomaly_scores else "Standard"}
         return risk_assessment
     
     @staticmethod
-    def _generate_action_recommendations(anomalies, method: str) -> list:
+    def _generate_action_recommendations(anomalies, method: str, anomaly_results=None) -> list:
         """Generate specific action recommendations based on anomalies"""
         recommendations = []
         

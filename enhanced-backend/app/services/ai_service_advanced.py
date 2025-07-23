@@ -47,6 +47,12 @@ class AdvancedAIInsightService:
         self.api_key = os.getenv('NVIDIA_API_KEY')
         self.base_url = "https://integrate.api.nvidia.com/v1"
         
+        # Debug: Check if API key is loaded
+        if self.api_key:
+            logger.info(f"NVIDIA API key loaded: {self.api_key[:10]}...{self.api_key[-4:] if len(self.api_key) > 14 else '[short key]'}")
+        else:
+            logger.error("NVIDIA API key not found in environment variables!")
+        
         # Initialize client if API is available
         self.client = None
         if NVIDIA_API_AVAILABLE and self.api_key:
@@ -58,15 +64,16 @@ class AdvancedAIInsightService:
                 logger.info("NVIDIA API client initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize NVIDIA API client: {str(e)}")
+        else:
+            if not NVIDIA_API_AVAILABLE:
+                logger.error("OpenAI library not available for NVIDIA API")
+            if not self.api_key:
+                logger.error("NVIDIA API key not provided")
         
         # Model priority list (try these in order)
         self.models = [
             "nvidia/llama-3.1-nemotron-70b-instruct",
             "meta/llama-3.1-405b-instruct", 
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            "microsoft/phi-3-medium-4k-instruct",
-            "mistralai/mixtral-8x7b-instruct-v0.1"
         ]
         
         # Current working model
@@ -309,11 +316,14 @@ class AdvancedAIInsightService:
                 
                 logger.info(f"Generating prompt for node {node_id} (type: {node_type}) with data keys: {list(node_data.keys()) if isinstance(node_data, dict) else 'non-dict data'}")
                 
-                # Use the prompt router to generate the prompt
+                # Summarize data before generating prompt to control size
+                summarized_data = self._summarize_node_data_for_analysis(node_data, node_type)
+                
+                # Use the prompt router to generate the prompt with summarized data
                 try:
                     prompt = self.prompt_router.generate_prompt(
                         node_type=node_type,
-                        data=node_data,
+                        data=summarized_data,
                         node_id=node_id,
                         context=context
                     )
@@ -323,13 +333,18 @@ class AdvancedAIInsightService:
                         logger.warning(f"Prompt generator indicated data issue for node {node_id}: {prompt[:100]}...")
                         continue
                     
+                    # Apply additional truncation if the individual prompt is still too large
+                    if len(prompt) > 50000:  # ~12,500 tokens per node prompt
+                        prompt = self._truncate_individual_node_prompt(prompt, node_id)
+                        logger.info(f"Truncated individual prompt for {node_id}")
+                    
                     node_prompts[node_id] = prompt
                     logger.info(f"Generated advanced prompt for {node_id} ({len(prompt)} characters)")
                     
                 except Exception as prompt_error:
                     logger.error(f"Error generating prompt for node {node_id}: {str(prompt_error)}")
                     # Use fallback prompt
-                    node_prompts[node_id] = self._generate_fallback_node_prompt(node_type, node_data, node_id)
+                    node_prompts[node_id] = self._generate_fallback_node_prompt(node_type, summarized_data, node_id)
                 
             except Exception as e:
                 logger.error(f"Error generating prompt for node {node_id}: {str(e)}")
@@ -437,6 +452,13 @@ Provide a comprehensive analysis structured as follows:
 
 ⚡ **CRITICAL REQUIREMENT**: All insights must be based on the ACTUAL data, patterns, and results from the connected nodes. Focus only on data information and results reporting.
 
+**RESPONSE COMPLETENESS REQUIREMENTS**:
+- Each section MUST contain at least 3-4 meaningful sentences
+- Provide specific data insights, not generic statements
+- Include quantitative findings where available
+- Ensure comprehensive coverage of all workflow aspects
+- Use bullet points and clear formatting for readability
+
 **WORKFLOW CONTEXT**: {json.dumps(context, indent=2) if context else 'Standard analytical workflow'}
 """
         
@@ -500,65 +522,118 @@ Please provide a focused analysis of this specific node that includes:
         
         return focused_prompt
     
-    def _call_nvidia_api_streaming(self, prompt: str) -> str:
-        """Call NVIDIA API with streaming for comprehensive responses"""
+    def _call_nvidia_api_streaming(self, prompt: str, max_retries: int = 2) -> str:
+        """Call NVIDIA API with streaming for comprehensive responses and retry logic"""
         if not self.client:
             logger.warning("NVIDIA API not available, generating fallback response")
             return self._generate_fallback_ai_response(prompt)
+
+        # Check and truncate prompt if it's too long for the model
+        truncated_prompt = self._truncate_prompt_if_needed(prompt)
+        if len(truncated_prompt) != len(prompt):
+            logger.warning(f"Prompt truncated from {len(prompt)} to {len(truncated_prompt)} characters due to token limits")
+
+        retry_count = 0
         
-        try:
-            # System prompt for data scientist expertise
-            system_prompt = """You are a data scientist with expertise in:
-- Data analysis and statistical modeling
-- Data quality assessment
-- Pattern recognition and data insights
+        while retry_count <= max_retries:
+            try:
+                # System prompt for data scientist expertise
+                system_prompt = """You are a comprehensive data scientist with expertise in:
+- Advanced data analysis and statistical modeling
+- Data quality assessment and validation
+- Pattern recognition and data insights discovery
 - Technical and statistical reporting
+- Multi-node workflow analysis
 
-Provide clear and concise data information and results reporting. Focus on presenting factual information about the data, statistical properties, and analytical findings without business implications or recommendations."""
+CRITICAL INSTRUCTIONS:
+1. Provide COMPLETE and DETAILED analysis for ALL sections requested
+2. Generate comprehensive content for each section (minimum 3-4 sentences per section)
+3. Include specific findings, patterns, and insights from the actual data
+4. Use clear section headers and bullet points for readability
+5. Ensure each section provides meaningful analytical value
 
-            # Try different models until one works
-            for model_attempt, model_name in enumerate(self.models):
-                try:
-                    logger.info(f"Attempting API call with model: {model_name}")
-                    
-                    completion = self.client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.7,
-                        top_p=0.95,
-                        max_tokens=8192,  # Increased for comprehensive analysis
-                        frequency_penalty=0.1,
-                        presence_penalty=0.1,
-                        stream=True
-                    )
-                    
-                    # Update working model
-                    if model_name != self.model:
-                        self.model = model_name
-                        logger.info(f"Updated working model to: {model_name}")
-                    
-                    # Collect streaming response
-                    full_response = ""
-                    for chunk in completion:
-                        if chunk.choices[0].delta.content is not None:
-                            content = chunk.choices[0].delta.content
-                            full_response += content
-                    
-                    logger.info(f"Successfully generated AI response ({len(full_response)} characters)")
-                    return full_response
-                    
-                except Exception as model_error:
-                    logger.warning(f"Model {model_name} failed: {str(model_error)}")
-                    if model_attempt == len(self.models) - 1:
-                        raise model_error
-                    continue
-            
-        except Exception as e:
-            logger.error(f"NVIDIA API call failed: {str(e)}")
-            return self._generate_fallback_ai_response(prompt)
+Focus on delivering thorough data information and results reporting with actionable insights."""
+
+                # Try different models until one works
+                for model_attempt, model_name in enumerate(self.models):
+                    try:
+                        logger.info(f"Attempting API call with model: {model_name} (retry {retry_count}/{max_retries})")
+                        
+                        # Additional validation for API key before making request
+                        if not self.api_key or len(self.api_key) < 10:
+                            raise Exception(f"Invalid or missing NVIDIA API key (length: {len(self.api_key) if self.api_key else 0})")
+                        
+                        completion = self.client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": truncated_prompt}
+                            ],
+                            temperature=0.7,
+                            top_p=0.95,
+                            max_tokens=12288,  # Increased to allow more comprehensive responses
+                            frequency_penalty=0.1,
+                            presence_penalty=0.1,
+                            stream=True,
+                            timeout=150  # Increased timeout for more comprehensive analysis
+                        )
+                        
+                        # Update working model
+                        if model_name != self.model:
+                            self.model = model_name
+                            logger.info(f"Updated working model to: {model_name}")
+                        
+                        # Collect streaming response with timeout handling
+                        full_response = ""
+                        chunk_count = 0
+                        start_time = time.time()
+                        
+                        try:
+                            for chunk in completion:
+                                if chunk.choices[0].delta.content is not None:
+                                    content = chunk.choices[0].delta.content
+                                    full_response += content
+                                    chunk_count += 1
+                                    
+                                    # Log progress every 100 chunks
+                                    if chunk_count % 100 == 0:
+                                        elapsed = time.time() - start_time
+                                        logger.info(f"Received {chunk_count} chunks in {elapsed:.1f}s, response length: {len(full_response)}")
+                                    
+                                    # Safety timeout for extremely long responses
+                                    if time.time() - start_time > 180:  # 3 minute absolute limit
+                                        logger.warning("AI response streaming timeout reached, returning partial response")
+                                        break
+                        except Exception as streaming_error:
+                            logger.warning(f"Streaming error: {str(streaming_error)}, returning partial response")
+                            if not full_response:  # If no response collected, re-raise
+                                raise streaming_error
+                        
+                        logger.info(f"Successfully generated AI response ({len(full_response)} characters)")
+                        return full_response
+                        
+                    except Exception as model_error:
+                        logger.warning(f"Model {model_name} failed (retry {retry_count}): {str(model_error)}")
+                        if model_attempt == len(self.models) - 1:
+                            # If this was the last model, re-raise to trigger retry
+                            raise model_error
+                        continue
+                
+            except Exception as e:
+                retry_count += 1
+                logger.warning(f"NVIDIA API call failed (attempt {retry_count}/{max_retries + 1}): {str(e)}")
+                
+                if retry_count <= max_retries:
+                    # Wait before retrying with exponential backoff
+                    wait_time = min(2 ** retry_count, 5)  # Cap at 5 seconds
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"NVIDIA API call failed after {max_retries + 1} attempts: {str(e)}")
+                    return self._generate_fallback_ai_response(prompt)
+        
+        # This should not be reached, but just in case
+        return self._generate_fallback_ai_response(prompt)
     
     def _structure_ai_response(self, ai_response: str, nodes: Dict[str, Any], 
                              workflow_analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -681,9 +756,19 @@ Provide clear and concise data information and results reporting. Focus on prese
     
     def _generate_fallback_ai_response(self, prompt: str) -> str:
         """Generate fallback response when AI is not available"""
+        # Check if this is an authentication issue
+        api_status = "API not configured"
+        if self.api_key:
+            if len(self.api_key) < 10:
+                api_status = "Invalid API key format"
+            else:
+                api_status = "Authentication failed - check API key validity"
+        else:
+            api_status = "No API key provided"
+            
         return f"""
 ## DATA SUMMARY
-AI API temporarily unavailable. Based on the workflow structure and data patterns, this analysis indicates a data processing pipeline with multiple connected nodes requiring integrated assessment.
+NVIDIA AI API is currently unavailable ({api_status}). Based on the workflow structure and data patterns, this analysis indicates a data processing pipeline with multiple connected nodes requiring integrated assessment.
 
 ## INTEGRATED DATA ANALYSIS  
 The connected nodes represent an analytical workflow combining data processing, analysis, and visualization. Each component contributes to the overall data processing and analysis pipeline.
@@ -695,7 +780,12 @@ The connected nodes represent an analytical workflow combining data processing, 
 • Data quality assessment needed for reliable results
 • Pattern detection and trend analysis possible with available data
 
-Note: This is a fallback analysis. For comprehensive data analysis, ensure NVIDIA API access is configured.
+**Note**: This is a fallback analysis due to AI API authentication issues. To enable comprehensive AI-powered insights:
+1. Verify your NVIDIA API key is valid and active
+2. Check that the API key has access to the required models
+3. Ensure the API key is properly set in environment variables as 'NVIDIA_API_KEY'
+
+For comprehensive data analysis, please configure NVIDIA API access.
 """
     
     def _generate_error_response(self, error_message: str, node_id: str = None) -> Dict[str, Any]:
@@ -1159,6 +1249,265 @@ Please analyze this node's data and provide insights based on:
                 summary_parts.append(f"• {key}: {type(value).__name__}")
         
         return "\n".join(summary_parts) if summary_parts else "• Data structure not recognized"
+    
+    def _truncate_prompt_if_needed(self, prompt: str, max_tokens: int = 100000) -> str:
+        """
+        Truncate prompt if it exceeds token limits to prevent 400 Bad Request errors.
+        Rough estimate: 1 token ≈ 4 characters for English text.
+        Model limit is 131,072 tokens, we reserve some for system prompt and completion.
+        Being more conservative with truncation - 100K tokens = ~400K chars.
+        """
+        # Rough token estimate (4 chars per token)
+        estimated_tokens = len(prompt) / 4
+        
+        if estimated_tokens <= max_tokens:
+            return prompt
+        
+        logger.warning(f"Prompt too long: ~{estimated_tokens:.0f} tokens (limit: {max_tokens}). Smart truncation applied...")
+        
+        # Calculate how many characters we can keep
+        max_chars = int(max_tokens * 4)
+        
+        # More intelligent truncation strategy
+        lines = prompt.split('\n')
+        
+        # Keep essential parts with better balance
+        header_lines = lines[:25]  # Increased header
+        
+        # Find analysis requirements section
+        analysis_start = None
+        for i, line in enumerate(lines):
+            if "ANALYSIS REQUIREMENTS" in line.upper() or "REQUIREMENTS" in line.upper():
+                analysis_start = i
+                break
+        
+        if analysis_start:
+            # Keep requirements and some data context
+            footer_lines = lines[analysis_start:]
+            
+            # Try to include some middle content if space allows
+            remaining_space = max_chars - len('\n'.join(header_lines + footer_lines))
+            middle_content = []
+            
+            if remaining_space > 10000:  # If we have significant space left
+                # Include some node data summaries
+                middle_start = min(len(header_lines) + 10, len(lines) - len(footer_lines) - 10)
+                middle_end = max(middle_start, analysis_start - 10)
+                
+                for i in range(middle_start, middle_end):
+                    if i < len(lines):
+                        line = lines[i]
+                        # Keep lines that look like data summaries
+                        if any(keyword in line.lower() for keyword in ['shape:', 'columns:', 'summary:', 'statistics:', 'results:']):
+                            middle_content.append(line)
+                            if len('\n'.join(middle_content)) > 5000:  # Limit middle content
+                                break
+            
+            truncated_content = '\n'.join(
+                header_lines + 
+                (["\n...[DATA ANALYSIS CONTENT PRESERVED]...\n"] + middle_content if middle_content else ["\n...[NODE DATA TRUNCATED FOR EFFICIENCY]...\n"]) +
+                ["\n...[CONTINUING WITH ANALYSIS REQUIREMENTS]...\n"] + 
+                footer_lines
+            )
+        else:
+            # If no requirements section, keep more of the beginning
+            truncated_content = prompt[:max_chars] + '\n\n...[CONTENT TRUNCATED - PLEASE ANALYZE BASED ON AVAILABLE DATA]...'
+        
+        # Final size check
+        if len(truncated_content) > max_chars:
+            truncated_content = truncated_content[:max_chars] + "\n\n[FINAL TRUNCATION APPLIED - ANALYZE AVAILABLE CONTENT]"
+        
+        logger.info(f"Smart truncation applied: {len(prompt)} → {len(truncated_content)} characters")
+        return truncated_content
+    
+    def _summarize_node_data_for_analysis(self, node_data: Dict[str, Any], node_type: str) -> Dict[str, Any]:
+        """
+        Summarize node data to extract meaningful insights for AI analysis.
+        This preserves important analytical results while preventing token overflow.
+        """
+        if not node_data:
+            return {}
+        
+        summarized = {}
+        
+        for key, value in node_data.items():
+            if isinstance(value, pd.DataFrame):
+                # For DataFrames, extract comprehensive information
+                df_summary = {
+                    'shape': value.shape,
+                    'columns': list(value.columns),  # Keep ALL columns for analysis
+                    'dtypes': dict(value.dtypes),  # Keep ALL dtypes
+                    'memory_usage_mb': round(value.memory_usage(deep=True).sum() / 1024**2, 2),
+                    'null_counts': dict(value.isnull().sum()),
+                    'sample_data': value.head(5).to_dict('records') if len(value) > 0 else []  # More sample data
+                }
+                
+                # Add comprehensive statistics for ALL numeric columns
+                numeric_cols = value.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    stats_df = value[numeric_cols].describe()
+                    df_summary['detailed_statistics'] = stats_df.to_dict()
+                    
+                    # Add additional statistical measures
+                    df_summary['additional_stats'] = {}
+                    for col in numeric_cols:
+                        col_data = value[col].dropna()
+                        if len(col_data) > 0:
+                            df_summary['additional_stats'][col] = {
+                                'skewness': float(col_data.skew()) if hasattr(col_data, 'skew') else 'N/A',
+                                'kurtosis': float(col_data.kurtosis()) if hasattr(col_data, 'kurtosis') else 'N/A',
+                                'unique_values': int(col_data.nunique()),
+                                'zero_count': int((col_data == 0).sum()),
+                                'negative_count': int((col_data < 0).sum())
+                            }
+                
+                # Add categorical column analysis
+                categorical_cols = value.select_dtypes(include=['object', 'category']).columns
+                if len(categorical_cols) > 0:
+                    df_summary['categorical_analysis'] = {}
+                    for col in categorical_cols:
+                        value_counts = value[col].value_counts().head(10)  # Top 10 categories
+                        df_summary['categorical_analysis'][col] = {
+                            'unique_count': int(value[col].nunique()),
+                            'top_categories': dict(value_counts),
+                            'null_percentage': float(value[col].isnull().mean() * 100)
+                        }
+                
+                summarized[key] = df_summary
+                
+            elif isinstance(value, dict):
+                # For dictionaries, preserve ALL important analytical content
+                if len(value) > 50:  # Only summarize VERY large dicts
+                    # Keep ALL analytical keys - don't filter aggressively
+                    analytical_keys = [k for k in value.keys() if any(
+                        important_word in str(k).lower() 
+                        for important_word in [
+                            'accuracy', 'precision', 'recall', 'score', 'result', 'results',
+                            'mean', 'std', 'count', 'summary', 'performance', 'metric',
+                            'statistics', 'stat', 'analysis', 'finding', 'insight',
+                            'correlation', 'coefficient', 'p_value', 'significance',
+                            'anomaly', 'outlier', 'detection', 'threshold', 'boundary',
+                            'model', 'prediction', 'probability', 'confidence',
+                            'feature', 'importance', 'weight', 'coefficient',
+                            'error', 'loss', 'rmse', 'mae', 'mse', 'r2'
+                        ]
+                    )]
+                    
+                    # If we found analytical keys, keep them ALL
+                    if analytical_keys:
+                        limited_dict = {k: value[k] for k in analytical_keys}
+                        # Also include first 20 regular keys if space allows
+                        remaining_keys = [k for k in list(value.keys())[:20] if k not in analytical_keys]
+                        for k in remaining_keys:
+                            limited_dict[k] = value[k]
+                        summarized[key] = limited_dict
+                    else:
+                        # Keep first 30 keys if no analytical keys found
+                        summarized[key] = {k: value[k] for k in list(value.keys())[:30]}
+                else:
+                    # Keep smaller dicts completely
+                    summarized[key] = value
+                    
+            elif isinstance(value, list):
+                # For lists, be more generous with size limits
+                if len(value) > 1000:  # Only truncate very large lists
+                    summarized[key] = {
+                        'type': 'large_list',
+                        'length': len(value),
+                        'sample_start': value[:10],  # More samples
+                        'sample_end': value[-5:] if len(value) > 10 else [],
+                        'data_types': list(set(type(item).__name__ for item in value[:50])),
+                        'summary_stats': self._get_list_summary_stats(value)
+                    }
+                else:
+                    # Keep smaller lists completely
+                    summarized[key] = value
+                    
+            elif isinstance(value, str) and len(value) > 50000:  # Increased threshold
+                # For very long strings, keep more content
+                summarized[key] = value[:20000] + "...[CONTENT CONTINUES]..." + value[-5000:]
+                
+            else:
+                # For other data types, include as-is
+                summarized[key] = value
+        
+        return summarized
+    
+    def _get_list_summary_stats(self, data_list: list) -> Dict[str, Any]:
+        """Get summary statistics for a list of data"""
+        try:
+            if not data_list:
+                return {}
+            
+            # Try to convert to numeric if possible
+            numeric_values = []
+            for item in data_list[:1000]:  # Sample first 1000 items
+                try:
+                    if isinstance(item, (int, float)):
+                        numeric_values.append(float(item))
+                    elif isinstance(item, str) and item.replace('.', '').replace('-', '').isdigit():
+                        numeric_values.append(float(item))
+                except:
+                    continue
+            
+            if len(numeric_values) > 0:
+                import statistics
+                return {
+                    'numeric_count': len(numeric_values),
+                    'mean': round(statistics.mean(numeric_values), 4),
+                    'median': round(statistics.median(numeric_values), 4),
+                    'min': min(numeric_values),
+                    'max': max(numeric_values),
+                    'std': round(statistics.stdev(numeric_values), 4) if len(numeric_values) > 1 else 0
+                }
+            else:
+                # Non-numeric list analysis
+                unique_types = list(set(type(item).__name__ for item in data_list[:100]))
+                return {
+                    'data_types': unique_types,
+                    'total_length': len(data_list)
+                }
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _truncate_individual_node_prompt(self, prompt: str, node_id: str, max_chars: int = 40000) -> str:
+        """
+        Truncate an individual node prompt while preserving the most important parts.
+        """
+        if len(prompt) <= max_chars:
+            return prompt
+        
+        lines = prompt.split('\n')
+        
+        # Find important sections
+        header_end = 0
+        analysis_start = len(lines)
+        
+        for i, line in enumerate(lines):
+            if "**NODE ID:" in line.upper() or "NODE ANALYSIS:" in line.upper():
+                header_end = min(i + 10, len(lines))  # Keep 10 lines after header
+            if "ANALYSIS REQUIREMENTS" in line.upper() or "REQUIREMENTS" in line.upper():
+                analysis_start = i
+                break
+        
+        # Keep header and requirements, truncate middle data
+        header_lines = lines[:header_end]
+        footer_lines = lines[analysis_start:] if analysis_start < len(lines) else []
+        
+        truncated_lines = header_lines + [
+            "",
+            "...[DATA CONTENT TRUNCATED TO PREVENT TOKEN OVERFLOW]...",
+            f"[Node {node_id} data summarized for analysis efficiency]",
+            ""
+        ] + footer_lines
+        
+        truncated_prompt = '\n'.join(truncated_lines)
+        
+        # If still too long, do simple truncation
+        if len(truncated_prompt) > max_chars:
+            truncated_prompt = truncated_prompt[:max_chars] + "\n\n[PROMPT TRUNCATED DUE TO LENGTH]"
+        
+        return truncated_prompt
 
 # Global instance
 advanced_ai_service = AdvancedAIInsightService()

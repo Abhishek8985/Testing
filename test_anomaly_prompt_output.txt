@@ -1,0 +1,110 @@
+🚨 **ANOMALY DETECTION INTELLIGENCE CENTER - Node: test_anomaly_node**
+
+⚠️ **ANOMALY DETECTION OVERVIEW**:
+Detection Method: Iqr (Interquartile Range)
+Anomalies Detected: 144 out of Unknown records
+Overall Anomaly Rate: 0.000%
+Columns Analyzed: 3
+Detection Confidence: Standard
+
+🔍 **DETAILED ANOMALY BREAKDOWN BY COLUMN**:
+
+• **CO(GT)**:
+  - Anomalies Detected: 45
+  - Anomaly Rate: 0.048%
+  - Threshold Range: -2.5 to 8.9
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [123, 456, 789, 1234, 5678]
+
+• **C6H6(GT)**:
+  - Anomalies Detected: 32
+  - Anomaly Rate: 0.034%
+  - Threshold Range: -1.2 to 15.6
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [234, 567, 890, 2345]
+
+• **NOx(GT)**:
+  - Anomalies Detected: 67
+  - Anomaly Rate: 0.072%
+  - Threshold Range: -50.2 to 425.8
+  - Detection Method: IQR
+  - Sample Anomaly Indices: [345, 678, 901, 3456, 6789]
+
+
+🔍 **ANOMALY PATTERN ANALYSIS**:
+📊 **MULTI-COLUMN ANOMALY DETECTION**: 3 columns analyzed
+• **NOx(GT)**: 67 anomalies (0.072%) - ⚠️ MODERATE priority [IQR]
+• **CO(GT)**: 45 anomalies (0.048%) - 📊 LOW priority [IQR]
+• **C6H6(GT)**: 32 anomalies (0.034%) - 📊 LOW priority [IQR]
+
+🎯 **DETECTION METHOD ASSESSMENT**:
+🔧 **IQR (INTERQUARTILE RANGE)**: Advanced anomaly detection method applied
+
+📊 **DATA IMPACT ANALYSIS**:
+⚠️ Data impact assessment not available
+
+⚡ **RISK LEVEL ASSESSMENT**:
+🎯 **CO(GT) THRESHOLD**: {'lower': -2.5, 'upper': 8.9, 'count': 45, 'method': 'IQR', 'percentage': 0.048} - configured for risk detection
+🎯 **C6H6(GT) THRESHOLD**: {'lower': -1.2, 'upper': 15.6, 'count': 32, 'method': 'IQR', 'percentage': 0.034} - configured for risk detection
+🎯 **NOX(GT) THRESHOLD**: {'lower': -50.2, 'upper': 425.8, 'count': 67, 'method': 'IQR', 'percentage': 0.072} - configured for risk detection
+📊 **CLUSTER RISK**: Several anomalies indicate localized problems
+📋 **BUSINESS CONTINUITY**: Assess impact on ongoing operations and customer service
+🔄 **RECOVERY PLANNING**: Develop contingency plans for anomaly response
+
+🎯 **ACTION RECOMMENDATIONS**:
+⚡ **IMMEDIATE ACTIONS**:
+   ⚠️ Perform detailed statistical analysis
+   📊 Conduct root cause analysis using statistical methods
+   🔍 Investigate correlated variables and patterns
+🔍 **INVESTIGATION ACTIONS**:
+   📊 Analyze anomaly distributions and statistical properties
+   🕒 Review temporal trends and autocorrelation patterns
+   🔗 Check variable relationships and covariance structures
+   � Apply multivariate analysis techniques
+🛡️ **PREVENTION ACTIONS**:
+   🔧 Optimize statistical detection thresholds
+   📈 Enhance monitoring with additional statistical metrics
+   📋 Update data validation procedures
+   📊 Implement improved outlier detection algorithms
+📢 **TECHNICAL DOCUMENTATION**:
+   📋 Create statistical summary of anomaly findings
+   � Generate visualization of anomaly distributions
+   � Document methodological approach to anomaly detection
+   📝 Record technical limitations and statistical assumptions
+🔄 **FOLLOW-UP ACTIONS**:
+   📅 Implement periodic statistical quality checks
+   📊 Monitor statistical properties of variables over time
+   🎯 Measure effectiveness of anomaly detection methods
+   📈 Update detection models with new data distributions
+
+📊 **DETECTION METADATA**:
+• Total Anomalies Found: 144
+• Data Points Analyzed: Unknown
+• Scoring Available: No
+• Threshold Configuration: Custom
+• Statistical Validation: Basic
+• Multi-column Analysis: Yes
+
+💡 **ADVANCED ANOMALY INTELLIGENCE REQUIREMENTS**:
+
+1. **PATTERN CLASSIFICATION**: Categorize anomalies by type, severity, and statistical significance
+2. **ROOT CAUSE ANALYSIS**: Identify potential causes and contributing factors for detected anomalies
+3. **STATISTICAL PRIORITY**: Rank anomalies by statistical significance and deviation magnitude
+4. **DETECTION RESPONSE**: Define technical actions for anomaly investigation
+5. **PREVENTION STRATEGY**: Recommend statistical methods to reduce false positives
+6. **MONITORING ENHANCEMENT**: Improve detection algorithms based on identified patterns
+7. **TECHNICAL ASSESSMENT**: Prepare detailed anomaly statistics and mathematical properties
+8. **EFFICIENCY ANALYSIS**: Evaluate the statistical power and accuracy of detection methods
+
+🎯 **CRITICAL ANOMALY ANALYSIS REQUIREMENTS**:
+- Classify SPECIFIC anomaly patterns and their statistical significance
+- Assess MATHEMATICAL PROPERTIES of detected deviations
+- Identify SYSTEMIC PATTERNS vs isolated incidents
+- Quantify STATISTICAL SIGNIFICANCE of detected anomalies
+- Recommend SPECIFIC TECHNIQUES for each category of anomaly
+- Establish MONITORING THRESHOLDS for future detection
+- Evaluate DETECTION EFFECTIVENESS and false positive rates
+
+⚡ **RESPONSE FOCUS**: Analyze the ACTUAL anomalies detected, their patterns, and statistical properties. Provide concrete, actionable recommendations for anomaly response and prevention based on the specific detection results.
+
+**CRITICAL**: Base analysis on the actual anomaly detection results provided, including specific threshold values, detection counts, and column-wise breakdowns.

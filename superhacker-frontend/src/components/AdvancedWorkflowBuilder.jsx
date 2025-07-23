@@ -1104,7 +1104,7 @@ const AdvancedWorkflowBuilder = () => {
   // Poll streaming results with fallback
   const pollStreamingResults = async (taskId) => {
     let attempts = 0
-    const maxAttempts = 30 // 30 attempts = 1 minute max (shorter timeout)
+    const maxAttempts = 90 // 90 attempts = 3 minutes max (increased for comprehensive AI analysis)
     
     const poll = async () => {
       try {
@@ -1119,9 +1119,24 @@ const AdvancedWorkflowBuilder = () => {
             const resultResponse = await fetch(`${API_BASE}/ai_background/streaming_analysis/${taskId}`)
             const resultData = await resultResponse.json()
             
-            if (resultData.success && resultData.analysis_result) {
-              setStreamingAiSummary(resultData.analysis_result)
-              toast.success('Streaming AI analysis completed!')
+            if (resultData.success) {
+              // Handle new comprehensive AI analysis format
+              if (resultData.insights) {
+                // New format with structured insights
+                const aiSummary = formatComprehensiveAiAnalysis(resultData)
+                setStreamingAiSummary(aiSummary)
+                toast.success('Comprehensive AI analysis completed!')
+              } else if (resultData.analysis_result) {
+                // Legacy format
+                setStreamingAiSummary(resultData.analysis_result)
+                toast.success('Streaming AI analysis completed!')
+              } else if (resultData.full_response) {
+                // Fallback to full response
+                setStreamingAiSummary(resultData.full_response)
+                toast.success('AI analysis completed!')
+              } else {
+                throw new Error('No analysis content found in response')
+              }
             } else {
               throw new Error('Failed to get streaming analysis result')
             }
@@ -1132,13 +1147,19 @@ const AdvancedWorkflowBuilder = () => {
             // Continue polling with progress feedback
             const progress = Math.min(90, (attempts / maxAttempts) * 100)
             
+            // Show progress updates to user
+            if (attempts % 15 === 0) { // Every 30 seconds
+              toast.info(`AI analysis in progress... (${Math.round(progress)}%)`, { autoClose: 2000 })
+            }
+            
             if (attempts < maxAttempts) {
               // Update progress and continue polling
               setTimeout(poll, 2000) // Poll every 2 seconds
             } else {
               // Timeout reached - generate fallback streaming content
-              console.log('Backend analysis timed out, generating fallback streaming content...')
-              generateFallbackStreamingContent()
+              console.log('Backend analysis timed out after 3 minutes, generating fallback streaming content...')
+              toast.warning('AI analysis taking longer than expected, showing fallback analysis...')
+              generateFallbackStreamingContent(true) // Pass timeout flag
             }
           }
         } else {
@@ -1150,7 +1171,7 @@ const AdvancedWorkflowBuilder = () => {
         // If it's a network error or API unavailable, try fallback
         if (error.message.includes('fetch') || error.message.includes('Failed to get task status')) {
           console.log('Network error detected, generating fallback streaming content...')
-          generateFallbackStreamingContent()
+          generateFallbackStreamingContent(false) // Pass network error flag
         } else {
           setStreamingError(error.message)
           setIsStreamingActive(false)
@@ -1162,8 +1183,76 @@ const AdvancedWorkflowBuilder = () => {
     poll()
   }
 
+  // Format comprehensive AI analysis result into displayable content
+  const formatComprehensiveAiAnalysis = (analysisData) => {
+    const { insights, workflow_analysis, node_summary, metadata } = analysisData
+    
+    let formattedContent = `## 🤖 AI COMPREHENSIVE ANALYSIS\n\n`
+    
+    // Add metadata header
+    if (metadata) {
+      formattedContent += `**Analysis Timestamp:** ${new Date(metadata.analysis_timestamp).toLocaleString()}\n`
+      formattedContent += `**AI Model:** ${metadata.ai_model_used || 'Advanced AI'}\n`
+      formattedContent += `**Nodes Analyzed:** ${metadata.nodes_analyzed || 'Multiple'}\n`
+      formattedContent += `**Complexity Level:** ${workflow_analysis?.complexity_level?.toUpperCase() || 'MODERATE'}\n\n`
+    }
+    
+    // Add Data Summary
+    if (insights?.data_summary) {
+      formattedContent += `## 📊 DATA SUMMARY\n\n${insights.data_summary}\n\n`
+    }
+    
+    // Add Integrated Analysis
+    if (insights?.integrated_analysis) {
+      formattedContent += `## 🔗 INTEGRATED DATA ANALYSIS\n\n${insights.integrated_analysis}\n\n`
+    }
+    
+    // Add Analysis Results
+    if (insights?.analysis_results) {
+      formattedContent += `## 📈 ANALYSIS RESULTS\n\n${insights.analysis_results}\n\n`
+    }
+    
+    // Add Key Insights
+    if (insights?.key_insights && insights.key_insights.length > 0) {
+      formattedContent += `## 💡 KEY INSIGHTS\n\n`
+      insights.key_insights.forEach((insight, index) => {
+        formattedContent += `${index + 1}. ${insight}\n`
+      })
+      formattedContent += `\n`
+    }
+    
+    // Add Data Quality Assessment
+    if (insights?.data_quality && insights.data_quality.length > 0) {
+      formattedContent += `## 🔍 DATA QUALITY ASSESSMENT\n\n`
+      insights.data_quality.forEach((quality, index) => {
+        formattedContent += `${index + 1}. ${quality}\n`
+      })
+      formattedContent += `\n`
+    }
+    
+    // Add Statistical Properties
+    if (insights?.statistical_properties) {
+      formattedContent += `## 📋 STATISTICAL PROPERTIES\n\n${insights.statistical_properties}\n\n`
+    }
+    
+    // Add Node Summary
+    if (node_summary) {
+      formattedContent += `## 🏗️ WORKFLOW SUMMARY\n\n`
+      formattedContent += `- **Total Nodes:** ${node_summary.total_nodes}\n`
+      formattedContent += `- **Node Types:** ${node_summary.node_types?.join(', ') || 'Various'}\n`
+      formattedContent += `- **Complexity:** ${node_summary.complexity_level?.toUpperCase() || 'MODERATE'}\n\n`
+    }
+    
+    // Fallback to full response if structured content is empty
+    if (formattedContent.trim() === '## 🤖 AI COMPREHENSIVE ANALYSIS\n\n') {
+      return analysisData.full_response || 'AI analysis completed successfully.'
+    }
+    
+    return formattedContent
+  }
+
   // Generate fallback streaming content with simulated streaming effect
-  const generateFallbackStreamingContent = () => {
+  const generateFallbackStreamingContent = (isTimeout = false) => {
     const results = executionResults.execution_results?.results || {}
     const summary = executionResults.execution_results?.summary || {}
     
@@ -1220,7 +1309,7 @@ ${totalExecutionTime > 15 ? '• Optimize computational bottlenecks for better p
 4. Set up automated testing for continuous validation
 
 **Analysis Generated:** ${new Date().toLocaleString()}
-**Status:** Fallback Analysis (Backend AI Service Timeout)`;
+**Status:** ${isTimeout ? 'Comprehensive AI analysis taking longer than expected - showing workflow performance summary' : 'Network connectivity issue - showing fallback analysis'}`;
 
     // Simulate streaming effect
     let currentIndex = 0

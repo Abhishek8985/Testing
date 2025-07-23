@@ -579,6 +579,9 @@ class AdvancedWorkflowService:
             self.model_cache = {}
             self.chart_cache = {}
             
+            # Store nodes for helper methods to access
+            self._current_nodes = nodes
+            
             self._log_info(f"Starting workflow execution for workflow {workflow_id}")
             self._log_info(f"Workflow contains {len(nodes)} nodes and {len(connections)} connections")
             
@@ -909,27 +912,33 @@ class AdvancedWorkflowService:
         is_ai_summary = node_type == 'ai_summary'
         
         if is_ai_summary:
-            # AI Summary nodes get data from ALL executed nodes, not just direct connections
-            self._log_info(f"AI Summary node detected. Collecting data from ALL {len(self.data_cache)} executed nodes")
+            # AI Summary nodes get SUMMARIZED data from meaningful nodes only
+            self._log_info(f"AI Summary node detected. Extracting meaningful insights from {len(self.data_cache)} executed nodes")
             self._log_info(f"Current data cache contains nodes: {list(self.data_cache.keys())}")
             
-            # Create a comprehensive input structure with all node outputs
-            all_node_outputs = {}
+            # Create a filtered and summarized input structure for AI analysis
+            meaningful_insights = {}
             for executed_node_id, node_output in self.data_cache.items():
-                all_node_outputs[executed_node_id] = node_output
-                self._log_info(f"Adding data from node {executed_node_id}: type={type(node_output)}")
+                node_info = self._get_node_info_by_id(executed_node_id)
+                node_type = node_info.get('type', 'unknown')
+                node_name = node_info.get('name', f'Node {executed_node_id}')
                 
-                # Additional debugging for each node's output structure
-                if isinstance(node_output, dict):
-                    self._log_info(f"  Node {executed_node_id} dict keys: {list(node_output.keys())}")
-                    if 'data' in node_output and isinstance(node_output['data'], pd.DataFrame):
-                        self._log_info(f"  Node {executed_node_id} contains DataFrame: {node_output['data'].shape}")
-                elif isinstance(node_output, pd.DataFrame):
-                    self._log_info(f"  Node {executed_node_id} is DataFrame: {node_output.shape}")
+                # Extract only meaningful insights based on node type
+                summarized_data = self._extract_meaningful_insights(node_output, node_type, node_name)
+                
+                if summarized_data:  # Only include if there are meaningful insights
+                    meaningful_insights[executed_node_id] = {
+                        'node_name': node_name,
+                        'node_type': node_type,
+                        'insights': summarized_data
+                    }
+                    self._log_info(f"Extracted meaningful insights from {node_name} ({node_type})")
+                else:
+                    self._log_info(f"Skipped {node_name} ({node_type}) - no meaningful insights to extract")
             
-            # Pass all node outputs in the default input port for AI analysis
-            inputs['default'] = all_node_outputs
-            self._log_info(f"AI Summary receiving comprehensive data from {len(all_node_outputs)} nodes")
+            # Pass only meaningful insights for AI analysis
+            inputs['default'] = meaningful_insights
+            self._log_info(f"AI Summary receiving meaningful insights from {len(meaningful_insights)} nodes")
             
             # Additional debugging: log the workflow execution state
             if hasattr(self, '_current_nodes'):
@@ -985,6 +994,240 @@ class AdvancedWorkflowService:
                 if node.get('id') == node_id:
                     return node.get('type', 'unknown')
         return 'unknown'
+    
+    def _get_node_info_by_id(self, node_id: str) -> Dict[str, Any]:
+        """Get node information by node ID from current execution context"""
+        if hasattr(self, '_current_nodes'):
+            for node in self._current_nodes:
+                if node.get('id') == node_id:
+                    return {
+                        'type': node.get('type', 'unknown'),
+                        'name': node.get('name', f'Node {node_id}'),
+                        'config': node.get('config', {})
+                    }
+        return {
+            'type': 'unknown',
+            'name': f'Node {node_id}',
+            'config': {}
+        }
+    
+    def _extract_meaningful_insights(self, node_output: Any, node_type: str, node_name: str) -> Dict[str, Any]:
+        """Extract only meaningful insights from node output for AI analysis"""
+        try:
+            insights = {}
+            
+            # Skip AI-related nodes to avoid recursive data
+            if node_type in ['ai_summary', 'ai_insights']:
+                return None
+            
+            # Handle different node types and extract relevant insights
+            if node_type == 'data_source':
+                if isinstance(node_output, pd.DataFrame):
+                    insights = {
+                        'data_summary': {
+                            'rows': len(node_output),
+                            'columns': len(node_output.columns),
+                            'column_names': list(node_output.columns)[:20],  # Limit to first 20 columns
+                            'data_types': node_output.dtypes.value_counts().to_dict(),
+                            'missing_values': node_output.isnull().sum().sum(),
+                            'memory_usage_mb': round(node_output.memory_usage(deep=True).sum() / 1024**2, 2)
+                        }
+                    }
+                    
+            elif node_type == 'descriptive_stats':
+                if isinstance(node_output, dict):
+                    insights = {
+                        'statistical_summary': {},
+                        'data_quality': {},
+                        'key_findings': []
+                    }
+                    
+                    # Extract basic statistics
+                    if 'basic_stats' in node_output:
+                        basic_stats = node_output['basic_stats']
+                        if isinstance(basic_stats, pd.DataFrame):
+                            insights['statistical_summary'] = {
+                                'numeric_columns': len(basic_stats.columns),
+                                'key_metrics': basic_stats.to_dict() if len(basic_stats.columns) <= 10 else 'Too many columns to display'
+                            }
+                    
+                    # Extract correlations summary
+                    if 'correlations' in node_output:
+                        corr_data = node_output['correlations']
+                        if isinstance(corr_data, pd.DataFrame):
+                            # Find strongest correlations
+                            corr_matrix = corr_data.abs()
+                            strong_correlations = []
+                            for i in range(len(corr_matrix.columns)):
+                                for j in range(i+1, len(corr_matrix.columns)):
+                                    corr_val = corr_matrix.iloc[i, j]
+                                    if corr_val > 0.7:  # Strong correlation threshold
+                                        strong_correlations.append({
+                                            'variables': [corr_matrix.columns[i], corr_matrix.columns[j]],
+                                            'correlation': round(corr_data.iloc[i, j], 3)
+                                        })
+                            insights['data_quality']['strong_correlations'] = strong_correlations[:10]  # Top 10
+                    
+                    # Extract missing values info
+                    if 'missing_values' in node_output:
+                        missing_info = node_output['missing_values']
+                        if isinstance(missing_info, pd.Series):
+                            high_missing = missing_info[missing_info > 0].to_dict()
+                            insights['data_quality']['missing_values'] = high_missing
+                            
+            elif node_type in ['classification', 'regression']:
+                if isinstance(node_output, dict):
+                    insights = {
+                        'model_performance': {},
+                        'model_details': {},
+                        'predictions_summary': {}
+                    }
+                    
+                    # Extract model metrics
+                    if 'metrics' in node_output:
+                        insights['model_performance'] = node_output['metrics']
+                    
+                    # Extract model algorithm and parameters
+                    if 'algorithm' in node_output:
+                        insights['model_details']['algorithm'] = node_output['algorithm']
+                    
+                    if 'feature_importance' in node_output:
+                        importance = node_output['feature_importance']
+                        if isinstance(importance, dict):
+                            # Get top 10 most important features
+                            sorted_importance = sorted(importance.items(), key=lambda x: abs(x[1]), reverse=True)[:10]
+                            insights['model_details']['top_features'] = dict(sorted_importance)
+                            
+            elif node_type == 'clustering':
+                if isinstance(node_output, dict):
+                    insights = {
+                        'clustering_results': {},
+                        'cluster_analysis': {}
+                    }
+                    
+                    if 'n_clusters' in node_output:
+                        insights['clustering_results']['n_clusters'] = node_output['n_clusters']
+                    
+                    if 'cluster_centers' in node_output:
+                        centers = node_output['cluster_centers']
+                        if hasattr(centers, 'shape'):
+                            insights['clustering_results']['cluster_centers_shape'] = list(centers.shape)
+                    
+                    if 'silhouette_score' in node_output:
+                        insights['clustering_results']['silhouette_score'] = round(node_output['silhouette_score'], 4)
+                        
+            elif node_type in ['eda_analysis', 'univariate_anomaly_detection', 'multivariate_anomaly_detection']:
+                if isinstance(node_output, dict):
+                    insights = {
+                        'analysis_summary': {},
+                        'key_findings': [],
+                        'recommendations': []
+                    }
+                    
+                    # Extract analysis results
+                    if 'results' in node_output:
+                        results = node_output['results']
+                        if isinstance(results, dict):
+                            # Extract overview information
+                            if 'overview' in results:
+                                overview = results['overview']
+                                if isinstance(overview, dict):
+                                    insights['analysis_summary'] = {
+                                        k: v for k, v in overview.items() 
+                                        if not isinstance(v, (pd.DataFrame, pd.Series, np.ndarray))
+                                    }
+                            
+                            # Extract recommendations
+                            if 'recommendations' in results:
+                                recommendations = results['recommendations']
+                                if isinstance(recommendations, list):
+                                    insights['recommendations'] = recommendations[:10]  # Top 10 recommendations
+                                    
+                            # Extract anomalies summary for anomaly detection nodes
+                            if 'anomalies' in results:
+                                anomalies = results['anomalies']
+                                if isinstance(anomalies, dict):
+                                    anomaly_summary = {}
+                                    for method, data in anomalies.items():
+                                        if isinstance(data, pd.DataFrame):
+                                            anomaly_summary[method] = {
+                                                'total_anomalies': len(data),
+                                                'percentage': round(len(data) / len(data) * 100, 2) if len(data) > 0 else 0
+                                            }
+                                    insights['analysis_summary']['anomaly_detection'] = anomaly_summary
+                                    
+            elif node_type in ['basic_plots', 'advanced_plots']:
+                if isinstance(node_output, dict):
+                    insights = {
+                        'visualization_summary': {
+                            'charts_generated': len([k for k in node_output.keys() if 'chart' in k.lower() or 'plot' in k.lower()]),
+                            'plot_type': node_output.get('plot_type', 'unknown'),
+                            'features_visualized': node_output.get('features_used', [])
+                        }
+                    }
+                    
+            elif node_type == 'data_cleaning':
+                if isinstance(node_output, dict):
+                    insights = {
+                        'cleaning_summary': {},
+                        'data_quality_improvement': {}
+                    }
+                    
+                    if 'cleaning_summary' in node_output:
+                        cleaning_info = node_output['cleaning_summary']
+                        insights['cleaning_summary'] = cleaning_info
+                    
+                    # If there's processed data, get basic info
+                    if 'data' in node_output and isinstance(node_output['data'], pd.DataFrame):
+                        cleaned_data = node_output['data']
+                        insights['data_quality_improvement'] = {
+                            'rows_after_cleaning': len(cleaned_data),
+                            'columns_after_cleaning': len(cleaned_data.columns),
+                            'remaining_missing_values': cleaned_data.isnull().sum().sum()
+                        }
+                        
+            else:
+                # For unknown node types, try to extract basic information
+                if isinstance(node_output, pd.DataFrame):
+                    insights = {
+                        'data_info': {
+                            'type': 'DataFrame',
+                            'shape': list(node_output.shape),
+                            'columns': list(node_output.columns)[:10]  # First 10 columns only
+                        }
+                    }
+                elif isinstance(node_output, dict):
+                    # Extract non-complex data from dictionary
+                    simple_data = {}
+                    for k, v in node_output.items():
+                        if isinstance(v, (str, int, float, bool, list)) and not isinstance(v, (pd.DataFrame, pd.Series, np.ndarray)):
+                            if isinstance(v, list) and len(v) > 20:
+                                simple_data[k] = f"List with {len(v)} items"
+                            else:
+                                simple_data[k] = v
+                    if simple_data:
+                        insights['extracted_data'] = simple_data
+            
+            # Add node execution metadata
+            if insights:
+                insights['node_metadata'] = {
+                    'node_type': node_type,
+                    'node_name': node_name,
+                    'data_type': type(node_output).__name__
+                }
+            
+            return insights if insights else None
+            
+        except Exception as e:
+            self._log_error(f"Error extracting insights from {node_name}: {str(e)}")
+            return {
+                'error': f"Could not extract insights: {str(e)}",
+                'node_metadata': {
+                    'node_type': node_type,
+                    'node_name': node_name,
+                    'data_type': type(node_output).__name__
+                }
+            }
     
     def _get_output_summary(self, result: Any) -> Dict[str, Any]:
         """Generate a summary of node output for logging"""
@@ -3600,56 +3843,129 @@ class AdvancedWorkflowService:
                     analysis['total_nodes'] += 1
                     analysis['node_outputs'][node_id] = {}
                     
-                    # Determine node type from output structure
-                    node_type = self._determine_node_type_from_output(node_output)
-                    self._log_info(f"Node {node_id} determined type: {node_type}")
-                    analysis['node_types'].append(node_type)
-                    analysis['node_outputs'][node_id]['type'] = node_type
-                    
-                    # Extract data from node output
-                    extracted_data = self._extract_data_from_node_output(node_output)
-                    analysis['node_outputs'][node_id]['data'] = extracted_data
-                    
-                    # Log what data was extracted
-                    has_df = extracted_data.get('dataframe') is not None
-                    has_model = extracted_data.get('model') is not None
-                    has_stats = extracted_data.get('statistics') is not None
-                    has_charts = extracted_data.get('charts') is not None
-                    self._log_info(f"Node {node_id} extracted data: DataFrame={has_df}, Model={has_model}, Stats={has_stats}, Charts={has_charts}")
-                    
-                    # Analyze DataFrames
-                    if extracted_data.get('dataframe') is not None:
-                        df = extracted_data['dataframe']
-                        analysis['dataframes_count'] += 1
-                        analysis['has_valid_data'] = True
+                    # Check if this is the new meaningful insights format
+                    if isinstance(node_output, dict) and 'insights' in node_output:
+                        # New meaningful insights format: {'node_name': 'X', 'node_type': 'Y', 'insights': {...}}
+                        node_type = node_output.get('node_type', 'unknown')
+                        node_name = node_output.get('node_name', f'Node {node_id}')
+                        insights = node_output.get('insights', {})
                         
-                        # Set primary data shape from first significant DataFrame
-                        if analysis['primary_data_shape'] is None:
-                            analysis['primary_data_shape'] = df.shape
+                        self._log_info(f"Processing meaningful insights from {node_name} ({node_type})")
                         
-                        # Calculate memory usage
-                        try:
-                            memory_usage = df.memory_usage(deep=True).sum()
-                            analysis['total_memory_usage'] += memory_usage
-                        except:
-                            pass
+                        analysis['node_types'].append(node_type)
+                        analysis['node_outputs'][node_id] = {
+                            'type': node_type,
+                            'node_name': node_name,
+                            'insights': insights
+                        }
+                        
+                        # Extract meaningful information from insights
+                        if node_type == 'data_source':
+                            data_summary = insights.get('data_summary', {})
+                            rows = data_summary.get('rows', 0)
+                            columns = data_summary.get('columns', 0)
+                            
+                            if rows > 0 and columns > 0:
+                                analysis['dataframes_count'] += 1
+                                analysis['has_valid_data'] = True
+                                analysis['data_sources'].append(node_id)
+                                
+                                # Set primary data shape from first significant data source
+                                if analysis['primary_data_shape'] is None:
+                                    analysis['primary_data_shape'] = (rows, columns)
+                                
+                                # Estimate memory usage from metadata
+                                memory_mb = data_summary.get('memory_usage_mb', 0)
+                                if memory_mb > 0:
+                                    analysis['total_memory_usage'] += memory_mb * 1024 * 1024  # Convert to bytes
+                        
+                        elif node_type == 'descriptive_stats':
+                            stat_summary = insights.get('statistical_summary', {})
+                            if stat_summary:
+                                analysis['statistics_count'] += 1
+                                analysis['has_valid_data'] = True
+                        
+                        elif node_type in ['classification', 'regression']:
+                            model_performance = insights.get('model_performance', {})
+                            if model_performance:
+                                analysis['models_count'] += 1
+                                analysis['has_valid_data'] = True
+                        
+                        elif node_type == 'clustering':
+                            clustering_results = insights.get('clustering_results', {})
+                            if clustering_results:
+                                analysis['models_count'] += 1
+                                analysis['has_valid_data'] = True
+                        
+                        elif node_type in ['basic_plots', 'advanced_plots']:
+                            viz_summary = insights.get('visualization_summary', {})
+                            charts_generated = viz_summary.get('charts_generated', 0)
+                            if charts_generated > 0:
+                                analysis['charts_count'] += charts_generated
+                                analysis['has_valid_data'] = True
+                        
+                        elif node_type in ['univariate_anomaly_detection', 'multivariate_anomaly_detection', 'eda_analysis']:
+                            analysis_summary = insights.get('analysis_summary', {})
+                            if analysis_summary:
+                                analysis['statistics_count'] += 1
+                                analysis['has_valid_data'] = True
+                        
+                        else:
+                            # Any other node type with insights counts as valid data
+                            if insights:
+                                analysis['has_valid_data'] = True
                     
-                    # Count other data types
-                    if extracted_data.get('model') is not None:
-                        analysis['models_count'] += 1
-                        analysis['has_valid_data'] = True
-                    
-                    if extracted_data.get('statistics'):
-                        analysis['statistics_count'] += 1
-                        analysis['has_valid_data'] = True
-                    
-                    if extracted_data.get('charts'):
-                        analysis['charts_count'] += len(extracted_data['charts'])
-                        analysis['has_valid_data'] = True
-                    
-                    # Track data sources
-                    if node_type in ['data_source', 'csv_upload', 'excel_upload']:
-                        analysis['data_sources'].append(node_id)
+                    else:
+                        # Fallback to old format analysis
+                        node_type = self._determine_node_type_from_output(node_output)
+                        self._log_info(f"Node {node_id} determined type (old format): {node_type}")
+                        analysis['node_types'].append(node_type)
+                        analysis['node_outputs'][node_id]['type'] = node_type
+                        
+                        # Extract data from node output (old method)
+                        extracted_data = self._extract_data_from_node_output(node_output)
+                        analysis['node_outputs'][node_id]['data'] = extracted_data
+                        
+                        # Log what data was extracted
+                        has_df = extracted_data.get('dataframe') is not None
+                        has_model = extracted_data.get('model') is not None
+                        has_stats = extracted_data.get('statistics') is not None
+                        has_charts = extracted_data.get('charts') is not None
+                        self._log_info(f"Node {node_id} extracted data: DataFrame={has_df}, Model={has_model}, Stats={has_stats}, Charts={has_charts}")
+                        
+                        # Analyze DataFrames
+                        if extracted_data.get('dataframe') is not None:
+                            df = extracted_data['dataframe']
+                            analysis['dataframes_count'] += 1
+                            analysis['has_valid_data'] = True
+                            
+                            # Set primary data shape from first significant DataFrame
+                            if analysis['primary_data_shape'] is None:
+                                analysis['primary_data_shape'] = df.shape
+                            
+                            # Calculate memory usage
+                            try:
+                                memory_usage = df.memory_usage(deep=True).sum()
+                                analysis['total_memory_usage'] += memory_usage
+                            except:
+                                pass
+                        
+                        # Count other data types
+                        if extracted_data.get('model') is not None:
+                            analysis['models_count'] += 1
+                            analysis['has_valid_data'] = True
+                        
+                        if extracted_data.get('statistics'):
+                            analysis['statistics_count'] += 1
+                            analysis['has_valid_data'] = True
+                        
+                        if extracted_data.get('charts'):
+                            analysis['charts_count'] += len(extracted_data['charts'])
+                            analysis['has_valid_data'] = True
+                        
+                        # Track data sources
+                        if node_type in ['data_source', 'csv_upload', 'excel_upload']:
+                            analysis['data_sources'].append(node_id)
                 
                 except Exception as e:
                     self._log_warning(f"Error analyzing node {node_id}: {str(e)}")
@@ -4420,7 +4736,7 @@ class AdvancedWorkflowService:
             }
     
     def _generate_quick_insights(self, connected_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate quick insights based on actual connected node data while background AI analysis is running"""
+        """Generate quick insights based on meaningful insights extracted from connected nodes"""
         try:
             node_outputs = connected_analysis.get('node_outputs', {})
             node_types = connected_analysis.get('node_types', [])
@@ -4431,113 +4747,237 @@ class AdvancedWorkflowService:
             data_issues = []
             recommendations = []
             business_insights = []
+            technical_insights = []
             
-            # Analyze each connected node for quick insights
+            self._log_info(f"Generating quick insights from {total_nodes} nodes with meaningful insights")
+            
+            # Analyze meaningful insights from each connected node
             for node_id, node_data in node_outputs.items():
-                node_type = node_data.get('type', 'unknown')
-                data = node_data.get('data', {})
-                
-                if node_type == 'data_source':
-                    df = data.get('dataframe')
-                    if df is not None:
-                        quick_findings.append(f"Data source loaded: {df.shape[0]:,} records × {df.shape[1]} features")
-                        # Quick data quality check
-                        missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100
-                        if missing_pct > 10:
-                            data_issues.append(f"High missing data: {missing_pct:.1f}%")
-                        elif missing_pct > 0:
-                            quick_findings.append(f"Minor missing data: {missing_pct:.1f}%")
+                try:
+                    # Check if this is the new meaningful insights format
+                    if 'insights' in node_data and isinstance(node_data['insights'], dict):
+                        insights = node_data['insights']
+                        node_name = node_data.get('node_name', f'Node {node_id}')
+                        node_type = node_data.get('node_type', 'unknown')
+                        
+                        self._log_info(f"Processing meaningful insights from {node_name} ({node_type})")
+                        
+                        if node_type == 'data_source':
+                            data_summary = insights.get('data_summary', {})
+                            rows = data_summary.get('rows', 'N/A')
+                            columns = data_summary.get('columns', 'N/A')
+                            missing_values = data_summary.get('missing_values', 0)
+                            
+                            if rows != 'N/A' and columns != 'N/A':
+                                quick_findings.append(f"📊 {node_name}: {rows:,} records × {columns} features loaded")
+                                
+                                if missing_values > 0:
+                                    missing_pct = (missing_values / (rows * columns)) * 100 if rows and columns else 0
+                                    if missing_pct > 10:
+                                        data_issues.append(f"⚠️ {node_name}: High missing data ({missing_pct:.1f}%)")
+                                    else:
+                                        quick_findings.append(f"✅ {node_name}: Minor missing data ({missing_pct:.1f}%)")
+                                else:
+                                    quick_findings.append(f"✅ {node_name}: Complete dataset with no missing values")
+                                
+                                # Business context based on data size
+                                if rows > 10000:
+                                    business_insights.append(f"🎯 Large dataset from {node_name} enables robust statistical analysis")
+                                if columns > 10:
+                                    business_insights.append(f"🔍 Rich feature set from {node_name} supports comprehensive analysis")
+                        
+                        elif node_type == 'descriptive_stats':
+                            stat_summary = insights.get('statistical_summary', {})
+                            data_quality = insights.get('data_quality', {})
+                            
+                            if stat_summary:
+                                numeric_cols = stat_summary.get('numeric_columns', 0)
+                                if numeric_cols > 0:
+                                    quick_findings.append(f"📈 {node_name}: Statistical analysis of {numeric_cols} numeric features completed")
+                                    technical_insights.append(f"Comprehensive statistical profiling from {node_name}")
+                            
+                            # Check for correlation insights
+                            strong_correlations = data_quality.get('strong_correlations', [])
+                            if strong_correlations:
+                                correlation_count = len(strong_correlations)
+                                quick_findings.append(f"🔗 {node_name}: Found {correlation_count} strong feature correlations")
+                                if correlation_count > 5:
+                                    recommendations.append(f"Consider feature selection due to high correlations in {node_name}")
+                        
+                        elif node_type in ['classification', 'regression']:
+                            model_performance = insights.get('model_performance', {})
+                            model_details = insights.get('model_details', {})
+                            
+                            algorithm = model_details.get('algorithm', 'Unknown')
+                            if algorithm != 'Unknown':
+                                quick_findings.append(f"🤖 {node_name}: {algorithm.replace('_', ' ').title()} model trained successfully")
+                                
+                            # Extract performance metrics
+                            if model_performance:
+                                if 'accuracy' in model_performance:
+                                    accuracy = model_performance['accuracy']
+                                    if accuracy > 0.8:
+                                        business_insights.append(f"🎯 Excellent model performance from {node_name} ({accuracy:.1%} accuracy)")
+                                    elif accuracy > 0.7:
+                                        business_insights.append(f"✅ Good model performance from {node_name} ({accuracy:.1%} accuracy)")
+                                    else:
+                                        data_issues.append(f"⚠️ Model performance from {node_name} needs improvement ({accuracy:.1%} accuracy)")
+                                
+                                if 'r2' in model_performance:
+                                    r2 = model_performance['r2']
+                                    if r2 > 0.8:
+                                        business_insights.append(f"🎯 Strong predictive model from {node_name} (R² = {r2:.3f})")
+                                    elif r2 > 0.6:
+                                        business_insights.append(f"✅ Decent predictive model from {node_name} (R² = {r2:.3f})")
+                            
+                            # Feature importance insights
+                            top_features = model_details.get('top_features', {})
+                            if top_features:
+                                feature_count = len(top_features)
+                                top_feature = max(top_features.keys(), key=lambda k: abs(top_features[k])) if top_features else None
+                                if top_feature:
+                                    technical_insights.append(f"Most important feature in {node_name}: {top_feature}")
+                        
+                        elif node_type == 'clustering':
+                            clustering_results = insights.get('clustering_results', {})
+                            
+                            n_clusters = clustering_results.get('n_clusters', 0)
+                            silhouette_score = clustering_results.get('silhouette_score', 0)
+                            
+                            if n_clusters > 0:
+                                quick_findings.append(f"🔀 {node_name}: Identified {n_clusters} distinct clusters")
+                                if silhouette_score > 0.5:
+                                    business_insights.append(f"🎯 Well-defined clusters from {node_name} (silhouette: {silhouette_score:.3f})")
+                                elif silhouette_score > 0.3:
+                                    business_insights.append(f"✅ Reasonable clusters from {node_name} (silhouette: {silhouette_score:.3f})")
+                        
+                        elif node_type in ['univariate_anomaly_detection', 'multivariate_anomaly_detection']:
+                            analysis_summary = insights.get('analysis_summary', {})
+                            recommendations_list = insights.get('recommendations', [])
+                            
+                            # Extract anomaly detection results
+                            anomaly_detection = analysis_summary.get('anomaly_detection', {})
+                            if anomaly_detection:
+                                total_anomalies = sum(method_data.get('total_anomalies', 0) for method_data in anomaly_detection.values())
+                                if total_anomalies > 0:
+                                    quick_findings.append(f"🚨 {node_name}: Detected {total_anomalies} potential anomalies")
+                                    if total_anomalies > 100:
+                                        data_issues.append(f"High anomaly count from {node_name} - investigate data quality")
+                                    else:
+                                        business_insights.append(f"Anomaly patterns identified by {node_name} for investigation")
+                                else:
+                                    quick_findings.append(f"✅ {node_name}: No significant anomalies detected")
+                            
+                            # Include specific recommendations from anomaly detection
+                            if recommendations_list:
+                                recommendations.extend([f"{node_name}: {rec}" for rec in recommendations_list[:2]])  # Top 2 recommendations
+                        
+                        elif node_type in ['basic_plots', 'advanced_plots']:
+                            viz_summary = insights.get('visualization_summary', {})
+                            charts_generated = viz_summary.get('charts_generated', 0)
+                            features_visualized = viz_summary.get('features_visualized', [])
+                            
+                            if charts_generated > 0:
+                                quick_findings.append(f"📊 {node_name}: Generated {charts_generated} visualizations")
+                                if features_visualized:
+                                    feature_list = ', '.join(features_visualized[:3])
+                                    technical_insights.append(f"Visual analysis of {feature_list} from {node_name}")
+                        
+                        elif node_type == 'data_cleaning':
+                            cleaning_summary = insights.get('cleaning_summary', {})
+                            data_quality_improvement = insights.get('data_quality_improvement', {})
+                            
+                            if cleaning_summary:
+                                quick_findings.append(f"🧹 {node_name}: Data cleaning operations completed")
+                                
+                            remaining_missing = data_quality_improvement.get('remaining_missing_values', 0)
+                            if remaining_missing == 0:
+                                business_insights.append(f"✅ Data quality optimized by {node_name}")
+                            elif remaining_missing > 0:
+                                technical_insights.append(f"Data cleaning by {node_name} - {remaining_missing} missing values remain")
+                        
                         else:
-                            quick_findings.append("Complete dataset with no missing values")
-                        
-                        # Business context
-                        if df.shape[0] > 10000:
-                            business_insights.append("Large dataset suitable for robust statistical analysis")
-                        if df.shape[1] > 20:
-                            business_insights.append("Rich feature set available for comprehensive analysis")
+                            # Handle unknown node types with available insights
+                            if 'extracted_data' in insights:
+                                quick_findings.append(f"📋 {node_name}: Data processing completed")
+                            elif 'error' in insights:
+                                data_issues.append(f"⚠️ {node_name}: {insights['error']}")
+                    
+                    else:
+                        # Fallback for old format or nodes without meaningful insights
+                        node_type = node_data.get('type', 'unknown')
+                        quick_findings.append(f"📋 Node {node_id} ({node_type}): Processing completed")
                 
-                elif node_type in ['descriptive_stats', 'statistical_analysis', 'processing']:
-                    stats = data.get('statistics', {})
-                    if stats:
-                        numeric_cols = sum(1 for col_stats in stats.values() if col_stats.get('mean') is not None)
-                        categorical_cols = len(stats) - numeric_cols
-                        quick_findings.append(f"Statistical analysis: {numeric_cols} numeric, {categorical_cols} categorical features")
-                        
-                        # Look for interesting patterns
-                        high_variation_cols = []
-                        for col, col_stats in stats.items():
-                            if col_stats.get('std') and col_stats.get('mean'):
-                                cv = col_stats['std'] / abs(col_stats['mean'])
-                                if cv > 1:  # High coefficient of variation
-                                    high_variation_cols.append(col)
-                        
-                        if high_variation_cols:
-                            quick_findings.append(f"High variation detected in: {', '.join(high_variation_cols[:3])}")
-                        
-                        business_insights.append("Comprehensive statistical profiling completed")
-                
-                elif node_type == 'visualization':
-                    charts = data.get('charts', [])
-                    chart_count = len(charts) if isinstance(charts, list) else data.get('charts', {}).get('count', 0)
-                    if chart_count > 0:
-                        quick_findings.append(f"Generated {chart_count} visualizations for data exploration")
-                        business_insights.append("Visual data exploration completed")
+                except Exception as e:
+                    self._log_warning(f"Error processing insights for node {node_id}: {str(e)}")
+                    data_issues.append(f"⚠️ Could not analyze node {node_id}")
             
             # Generate workflow-level insights
-            if len(node_outputs) > 1:
-                quick_findings.append(f"Multi-node analysis pipeline with {total_nodes} processing steps")
-                business_insights.append("Comprehensive data processing workflow established")
+            if total_nodes > 1:
+                quick_findings.append(f"🔗 Multi-step analysis pipeline with {total_nodes} connected nodes")
+                business_insights.append("Comprehensive data processing workflow executed successfully")
             
-            # Generate recommendations
+            # Generate recommendations based on analysis
             if not data_issues:
-                recommendations.append("Good data quality - proceed with advanced analytics")
+                recommendations.append("✅ Excellent data quality - ready for advanced analytics and business decisions")
             else:
-                recommendations.append("Address data quality issues for optimal results")
+                recommendations.append("🔧 Address identified data quality issues for optimal results")
             
-            if any('data_source' in types for types in node_types):
-                recommendations.append("Consider data enrichment for enhanced insights")
+            # Specific recommendations based on node types
+            if any('classification' in str(t) or 'regression' in str(t) for t in node_types):
+                recommendations.append("🤖 Machine learning models ready - consider deployment or further tuning")
             
-            if any('descriptive_stats' in types for types in node_types):
-                recommendations.append("Statistical foundation ready for predictive modeling")
+            if any('anomaly' in str(t) for t in node_types):
+                recommendations.append("🚨 Review anomaly detection results for business impact assessment")
             
-            # Determine overall quality score
-            if len(data_issues) == 0:
-                overall_score = "A" if len(quick_findings) >= 4 else "B"
-            elif len(data_issues) <= 2:
-                overall_score = "B"
+            if any('clustering' in str(t) for t in node_types):
+                recommendations.append("🔀 Analyze cluster characteristics for business segmentation opportunities")
+            
+            # Determine overall quality score based on findings
+            score_factors = len(quick_findings) - len(data_issues)
+            if score_factors >= 5 and len(data_issues) == 0:
+                overall_score = "A (Excellent)"
+            elif score_factors >= 3 and len(data_issues) <= 1:
+                overall_score = "B (Good)"
+            elif score_factors >= 1:
+                overall_score = "C (Satisfactory)"
             else:
-                overall_score = "C"
+                overall_score = "D (Needs Improvement)"
+            
+            # Combine all insights
+            all_insights = quick_findings + business_insights + technical_insights
             
             return {
-                "key_findings": quick_findings,
-                "data_quality_assessment": {
-                    "overall_score": overall_score,
-                    "main_issues": data_issues if data_issues else ["No major issues detected"],
-                    "recommendations": recommendations[:3]
+                'key_findings': all_insights[:15],  # Top 15 most important findings
+                'data_quality_assessment': {
+                    'overall_score': overall_score,
+                    'main_issues': data_issues,
+                    'recommendations': recommendations[:10]  # Top 10 recommendations
                 },
-                "analysis_recommendations": recommendations,
-                "business_insights": business_insights,
-                "next_steps": [
-                    "Review detailed AI analysis when background processing completes",
-                    "Consider additional analytical techniques based on data characteristics",
-                    "Plan business applications of the insights"
-                ],
-                "_status": "quick_insights_with_connected_node_analysis"
+                'analysis_recommendations': recommendations,
+                'business_insights': business_insights,
+                'technical_insights': technical_insights,
+                'next_steps': [
+                    "Review all identified insights and recommendations",
+                    "Investigate any data quality issues flagged",
+                    "Consider implementing suggested improvements",
+                    "Validate model performance in production environment" if any('model' in str(f) for f in all_insights) else "Consider adding predictive modeling",
+                    "Monitor workflow performance for optimization opportunities"
+                ]
             }
             
         except Exception as e:
             self._log_error(f"Error generating quick insights: {str(e)}")
             return {
-                "key_findings": [f"Workflow contains {connected_analysis.get('total_nodes', 0)} connected nodes"],
-                "data_quality_assessment": {
-                    "overall_score": "C", 
-                    "main_issues": ["Error in quick analysis"],
-                    "recommendations": ["Wait for detailed AI analysis to complete"]
+                'key_findings': [f"Error generating insights: {str(e)}"],
+                'data_quality_assessment': {
+                    'overall_score': 'Unknown',
+                    'main_issues': [str(e)],
+                    'recommendations': ['Review error details and retry analysis']
                 },
-                "analysis_recommendations": ["Background AI analysis will provide detailed recommendations"],
-                "business_insights": ["Detailed insights available after background processing"],
-                "next_steps": ["Monitor analysis completion"],
-                "_error": str(e)
+                'analysis_recommendations': ['Fix processing errors and retry'],
+                'business_insights': ['Analysis unavailable due to processing error'],
+                'next_steps': ['Resolve technical issues and rerun analysis']
             }
 
     def _prepare_eda_data(self, data: pd.DataFrame) -> Dict[str, Any]:
